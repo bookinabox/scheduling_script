@@ -28,7 +28,7 @@ days_map = {'Monday' : 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday":
 shifts = ['9-10','10-11','11-12','12-1','1-2','2-3','3-4','4-5']
 shifts_map = {'9-11' : 0, '10-12' : 1, '11-1' : 2, '12-2': 3, '1-3': 4, '2-4': 5, '3-5':6}
 SHIFTS_PER_TUTOR = 2 # TODO: Changing this will break everything for my consecutive shifts code. So... don't change it please.
-EQUALITY_WEIGHT = 10 # "Normalizes" tutors per shift
+EQUALITY_WEIGHT = 1 # "Normalizes" tutors per shift
 
 # Arbitrary weights. Might require some tuning
 FIRST_CHOICE_WEIGHT = 20
@@ -72,9 +72,9 @@ def solve_shift_scheduling(params, output_proto, responses_df):
         model.Add(sum(total_shifts) == SHIFTS_PER_TUTOR)
     
     # At least 1 tutor per shift (Maybe this should be a soft constraint, we'll see)
-    for d in range(num_days):
-        for s in range(num_shifts):
-            model.AddAtLeastOne(work[e, s, d] for e in range(num_employees)) 
+    #for d in range(num_days):
+    #    for s in range(num_shifts):
+    #       model.AddAtLeastOne(work[e, s, d] for e in range(num_employees)) 
 
     # Force consecutive Shifts (only works for 2. TODO: Generalize)
     for e in range(num_employees):
@@ -109,17 +109,16 @@ def solve_shift_scheduling(params, output_proto, responses_df):
 
     for index, row in responses_df.iterrows():
         pref_1_day, pref_1_shift = convert_preference_to_tuple(row[FIRST_CHOICE_COL])
-        tutor_preference_weights.append(work[index, pref_1_shift, pref_1_day])
+        tutor_preferences.append(work[index, pref_1_shift, pref_1_day])
         tutor_preference_weights.append(FIRST_CHOICE_WEIGHT)
 
         pref_2_day, pref_2_shift = convert_preference_to_tuple(row[SECOND_CHOICE_COL])
-        tutor_preference_weights.append(work[index, pref_2_shift, pref_2_day])
+        tutor_preferences.append(work[index, pref_2_shift, pref_2_day])
         tutor_preference_weights.append(SECOND_CHOICE_WEIGHT)
 
         pref_3_day, pref_3_shift = convert_preference_to_tuple(row[THIRD_CHOICE_COL])
-        tutor_preference_weights.append(work[index, pref_3_shift, pref_3_day])
+        tutor_preferences.append(work[index, pref_3_shift, pref_3_day])
         tutor_preference_weights.append(THIRD_CHOICE_WEIGHT)
-
 
     # TODO: Normalize class variety (probably not that important)
     
@@ -168,9 +167,6 @@ def convert_preference_to_tuple(preference : str):
     day = days_map[preference.split(" ")[0]]
     shift = shifts_map[preference.split(" ")[1]]
     return day, shift
-
-    
-
 
 def main(_=None):
 
