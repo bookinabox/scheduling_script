@@ -28,21 +28,21 @@ days_map = {'Monday' : 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday":
 shifts = ['9-10','10-11','11-12','12-1','1-2','2-3','3-4','4-5']
 shifts_map = {'9-11' : 0, '10-12' : 1, '11-1' : 2, '12-2': 3, '1-3': 4, '2-4': 5, '3-5':6}
 SHIFTS_PER_TUTOR = 2 # TODO: Changing this will break everything for my consecutive shifts code. So... don't change it please.
-EQUALITY_WEIGHT = 1 # "Normalizes" tutors per shift
+EQUALITY_WEIGHT = 0 # "Normalizes" tutors per shift
 
 # Arbitrary weights. Might require some tuning
-FIRST_CHOICE_WEIGHT = 20
+FIRST_CHOICE_WEIGHT = 1
 FIRST_CHOICE_COL = 'First Preferred Tutoring Time Slot (2 hour blocks only; Example Format: Monday 9-11)'
-SECOND_CHOICE_WEIGHT = 10
+SECOND_CHOICE_WEIGHT = 0
 SECOND_CHOICE_COL = 'Second Preferred Tutoring Time Slot'
-THIRD_CHOICE_WEIGHT = 5
+THIRD_CHOICE_WEIGHT = 0
 THIRD_CHOICE_COL = 'Third Preferred Tutoring Time Slot'
 
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('output_proto', '',
                     'Output file to write the cp_model proto to.')
-flags.DEFINE_string('params', 'max_time_in_seconds:10.0',
+flags.DEFINE_string('params', 'max_time_in_seconds:100.0',
                     'Sat solver parameters.')
 
 def solve_shift_scheduling(params, output_proto, responses_df):
@@ -71,29 +71,25 @@ def solve_shift_scheduling(params, output_proto, responses_df):
 
         model.Add(sum(total_shifts) == SHIFTS_PER_TUTOR)
     
-    # At least 1 tutor per shift (Maybe this should be a soft constraint, we'll see)
-    #for d in range(num_days):
-    #    for s in range(num_shifts):
-    #       model.AddAtLeastOne(work[e, s, d] for e in range(num_employees)) 
-
     # Force consecutive Shifts (only works for 2. TODO: Generalize)
-    for e in range(num_employees):
-        for d in range(num_days):
-            for s in range(1,num_shifts-1):
-                model.AddBoolOr([work[(e, s-1, d)], work[(e, s, d)].Not(), work[(e, s+1, d)]])
-            
-            # Literal edge cases lol
-            model.Add(work[e, 1, d]==1).OnlyEnforceIf(work[e, 0, d])
-            model.Add(work[e, 0, d]==1).OnlyEnforceIf(work[e, 1, d])
-            model.Add(work[e, num_shifts-1, d]==1).OnlyEnforceIf(work[e, num_shifts-2, d])
-            model.Add(work[e, num_shifts-2, d]==1).OnlyEnforceIf(work[e, num_shifts-1, d])
-    
+    #for e in range(num_employees):
+    #    for d in range(num_days):
+    #        for s in range(1,num_shifts-1):
+    #            model.AddBoolOr([work[(e, s-1, d)], work[(e, s, d)].Not(), work[(e, s+1, d)]])
+    #        model.Add(work[e, 1, d]==1).OnlyEnforceIf(work[e, 0, d])
+            #model.AddBoolOr([work[(e, 0, d)], work[(e, 2, d)]]).OnlyEnforceIf(work[e, 1, d])
+            #model.AddBoolOr([work[(e, 1, d)], work[(e, 3, d)]]).OnlyEnforceIf(work[e, 2, d])
+            #model.AddBoolOr([work[(e, 2, d)], work[(e, 4, d)]]).OnlyEnforceIf(work[e, 3, d])
+            #model.AddBoolOr([work[(e, 3, d)], work[(e, 5, d)]]).OnlyEnforceIf(work[e, 4, d])
+            #model.AddBoolOr([work[(e, 4, d)], work[(e, 6, d)]]).OnlyEnforceIf(work[e, 5, d])
+            #model.AddBoolOr([work[(e, 5, d)], work[(e, 7, d)]]).OnlyEnforceIf(work[e, 6, d])
+    #        model.Add(work[e, num_shifts-2, d]==1).OnlyEnforceIf(work[e, num_shifts-1, d])
+
     ##### Soft Constraints
 
     # Normalize number of people per shift (assumes equal workload per shift)
-    # TODO: modify to be based on shift traffic, rather than uniform
-    min_demand = num_employees * SHIFTS_PER_TUTOR // (num_shifts * num_days)
-    print(min_demand)
+    """
+    min_demand = (num_employees * SHIFTS_PER_TUTOR) // (num_shifts * num_days)
     worked = {}
     delta = model.NewIntVar(0, num_employees, "delta")
     for s in range(num_shifts):
@@ -102,28 +98,37 @@ def solve_shift_scheduling(params, output_proto, responses_df):
             worked[(s, d)] = model.NewIntVar(min_demand, num_employees, '')
             model.Add(worked[s, d] == sum(works))
             model.Add(worked[s, d] >= min_demand - delta)
-    
+    """
     # Generate Tutor Preferences
     tutor_preferences = []
     tutor_preference_weights = []
 
     for index, row in responses_df.iterrows():
         pref_1_day, pref_1_shift = convert_preference_to_tuple(row[FIRST_CHOICE_COL])
-        tutor_preferences.append(work[index, pref_1_shift, pref_1_day])
+        pref_1 = work[index, pref_1_shift, pref_1_day]
+        tutor_preferences.append(pref_1)
         tutor_preference_weights.append(FIRST_CHOICE_WEIGHT)
-
+        model.Add(work[index, pref_1_shift+1, pref_1_day]==1).OnlyEnforceIf(pref_1)
+        
         pref_2_day, pref_2_shift = convert_preference_to_tuple(row[SECOND_CHOICE_COL])
-        tutor_preferences.append(work[index, pref_2_shift, pref_2_day])
+        pref_2 = work[index, pref_2_shift, pref_2_day]
+        tutor_preferences.append(pref_2)
         tutor_preference_weights.append(SECOND_CHOICE_WEIGHT)
+        model.Add(work[index, pref_2_shift+1, pref_2_day]==1).OnlyEnforceIf(pref_2)
 
         pref_3_day, pref_3_shift = convert_preference_to_tuple(row[THIRD_CHOICE_COL])
-        tutor_preferences.append(work[index, pref_3_shift, pref_3_day])
+        pref_3 = work[index, pref_3_shift, pref_3_day]
+        tutor_preferences.append(pref_3)
         tutor_preference_weights.append(THIRD_CHOICE_WEIGHT)
+        model.Add(work[index, pref_3_shift+1, pref_3_day]==1).OnlyEnforceIf(pref_3)
+        print("Preference List:", len(tutor_preferences))
+        # Get at least one preference. idk this becomes infeasible
+        # model.AddBoolOr([pref_1, pref_2, pref_3])
 
     # TODO: Normalize class variety (probably not that important)
     
     model.Maximize(sum(tutor_preferences[i] * tutor_preference_weights[i] for i in range(len(tutor_preferences)))
-                    - delta * EQUALITY_WEIGHT
+                    #- delta * EQUALITY_WEIGHT
                     )
 
     if output_proto:
